@@ -1,0 +1,12 @@
+[Unit]
+Description=Qwen 3.8 27B via llama.cpp (Vulkan, Intel Arc) on 127.0.0.1:1234 for opencode
+After=network-online.target
+
+[Service]
+# Edit the two paths: your llama.cpp Vulkan build and the GGUF file.
+ExecStart=%h/llama.cpp/build/bin/llama-server -m %h/models/Qwen3.8-27B-Q4_K_M.gguf --alias qwen/qwen3.8-27b -ngl 99 -c 32768 -fa on --parallel 1 --jinja --host 127.0.0.1 --port 1234
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,10 @@
+Host myserver
+  HostName 192.168.1.10
+  User me
+Host *
+  IdentityFile /root/.ssh/id_ed25519
+  IdentitiesOnly yes
+  UserKnownHostsFile /root/.ssh/known_hosts
+  StrictHostKeyChecking yes
+  ServerAliveInterval 30
+  ConnectTimeout 10

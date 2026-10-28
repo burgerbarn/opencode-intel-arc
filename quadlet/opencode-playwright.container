@@ -1,0 +1,16 @@
+[Unit]
+Description=Playwright MCP browser for opencode
+
+[Container]
+ContainerName=opencode-playwright
+Image=mcr.microsoft.com/playwright/mcp:v0.0.83
+Entrypoint=node
+Exec=/app/cli.js --headless --browser chromium --no-sandbox --isolated --port 8931 --host 0.0.0.0 --allowed-hosts 127.0.0.1:8931
+Network=opencode.network
+PublishPort=127.0.0.1:8931:8931
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target

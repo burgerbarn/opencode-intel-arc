@@ -1,0 +1,26 @@
+[Unit]
+Description=opencode web
+Wants=opencode-playwright.service
+After=opencode-playwright.service
+
+[Container]
+ContainerName=opencode
+Image=localhost/opencode-dev:1.19.4
+Exec=web --hostname 0.0.0.0 --port 4096
+WorkingDir=/workspace
+EnvironmentFile=%h/opencode-stack/.env
+Volume=%h/opencode-stack/workspace:/workspace:Z
+Volume=%h/opencode-stack/config:/root/.config/opencode:Z
+Volume=%h/opencode-stack/gitconfig:/root/.gitconfig:ro,Z
+# Optional (README step 7): uncomment to mount a dedicated ssh key/config
+#Volume=%h/opencode-stack/ssh:/root/.ssh:ro,Z
+Volume=opencode-data.volume:/root/.local/share/opencode
+# Host network so the container reaches llama-server on the host's 127.0.0.1:1234.
+# host.containers.internal on a custom network points at the LAN address, not loopback.
+Network=host
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,5 @@
+# Rules for every opencode session
+
+- Keep changes small and focused on what was asked.
+- Run the code or tests before saying something works.
+- State what is unverified instead of guessing.

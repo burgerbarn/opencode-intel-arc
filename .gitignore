@@ -1,0 +1,8 @@
+.env
+gitconfig
+workspace/
+config/opencode.json
+config/AGENTS.md
+config/node_modules/
+config/package*.json
+ssh/

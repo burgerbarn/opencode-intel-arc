@@ -1,0 +1,51 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "lmstudio/qwen/qwen3.8-27b",
+  "provider": {
+    "lmstudio": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "llama.cpp (local)",
+      "options": {
+        "baseURL": "http://127.0.0.1:1234/v1"
+      },
+      "models": {
+        "qwen/qwen3.8-27b": {
+          "name": "Qwen 3.8 27B",
+          "limit": {
+            "context": 32768,
+            "output": 8192
+          }
+        }
+      },
+      "whitelist": [
+        "qwen/qwen3.8-27b"
+      ]
+    }
+  },
+  "mcp": {
+    "searxng": {
+      "type": "local",
+      "command": [
+        "mcp-searxng"
+      ],
+      "enabled": true,
+      "environment": {
+        "SEARXNG_URL": "https://searx.example.com"
+      }
+    },
+    "playwright": {
+      "type": "remote",
+      "url": "http://127.0.0.1:8931/mcp",
+      "enabled": true
+    }
+  },
+  "permission": {
+    "bash": {
+      "*": "allow",
+      "ssh *": "ask",
+      "scp *": "ask",
+      "rsync *": "ask",
+      "sftp *": "ask"
+    }
+  }
+}
