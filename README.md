@@ -14,8 +14,12 @@ What runs on the laptop:
   internet).
 - Shell tools inside the OpenCode container: git, bash, node, npm, python3, pip, curl, ssh.
 - Optional ssh access to your other machines with a dedicated key; OpenCode asks before every ssh/scp/rsync/sftp.
+- Optional GitHub CLI (`gh`): read commands run freely, anything that writes (and every `git push`) asks first.
+- Optional "coach" agent that explains each step before doing it; switch to it in the agent picker.
 
-Everything starts at boot as user services. Normal suspend is left alone.
+Nothing starts at boot: `scripts/opencode-ctl start|stop|status` (or the desktop launcher) brings the model, the
+browser and the web UI up or down together, so the 17 GB model only uses memory while you use it. Normal suspend
+is left alone.
 
 ## Hardware and software tested
 
@@ -25,6 +29,7 @@ Everything starts at boot as user services. Normal suspend is left alone.
 | CPU / GPU | Intel Core Ultra X7 358H / Intel Arc B390 (Panther Lake, Xe3) |
 | Memory | 32 GB LPDDR5X-7467 (30 GiB usable); Vulkan reports a 23.18 GiB device-local heap |
 | OS | Fedora 44 KDE, kernel 7.2.12, Mesa 26.2.5 (ANV), Podman 5.8.9 |
+| llama.cpp | release b11969, Vulkan backend |
 | OpenCode | 1.19.4 (`ghcr.io/anomalyco/opencode`) |
 | Playwright MCP | v0.0.83 (`mcr.microsoft.com/playwright/mcp`) |
 | mcp-searxng | 2.9.0 |
@@ -66,17 +71,28 @@ LM Studio vs plain `llama-server`: on a fresh long prompt LM Studio's default lo
 long conversation, both measured ~25-35 t/s. This setup uses `llama-server` because it is fewer moving parts and
 leaves more RAM free (10.8 GB vs 7.7 GB with the model loaded), not because OpenCode got faster.
 
-OpenCode end-to-end (one task each, wall time including every model call, LM Studio serving):
+### Like-for-like against an M4 Max MacBook Pro
 
-| Task | Time |
-|---|---|
-| Create `fib.py` and run it | 297 s (320 s with `llama-server`) |
-| Web search for Podman's current version (correct: v6.1.4) | 481 s |
-| Open example.com in the browser and read the heading | 218 s |
+Same GGUF file (sha256 above), same llama.cpp release (b11969; Vulkan on the XPS, Metal on the Mac), same
+`llama-server` flags, same OpenCode 1.19.4, same `opencode.json`, same three prompts via `opencode run`. Numbers
+are from `llama-server`'s own timing lines across all calls of the three tasks.
 
-For reference, the same model and the same depth test on an Apple M4 Max MacBook Pro (36 GB, LM Studio, MLX
-4-bit): 190 t/s on a fresh 25k-token prompt, 159 t/s for 2.4k new tokens on top of it, 23 t/s generation - about
-4-7x the Arc laptop. The Arc setup is best for short, bounded tasks; long multi-step sessions work but are slow.
+| | XPS 14, balanced profile | XPS 14, `throughput-performance` profile | MacBook Pro M4 Max, 36 GB |
+|---|---|---|---|
+| Generation | 4.4-5.6 t/s | 5.85 t/s | 17-19.5 t/s |
+| Prompt processing mid-conversation (calls > 300 new tokens) | 25-49 t/s | 40-110 t/s | 142-163 t/s |
+| First long prompt (~14.6k tokens, cold) | 91 t/s | - | 180 t/s |
+| Wall time: fib / search / browser | 273 / 999 / 238 s | 295 / 316\* / failed\*\* | 124 / 100 / 60 s |
+
+\* answered Podman 6.1.0; the current stable release was v6.1.4. \*\* the model tried to read Playwright's page
+snapshot outside the workspace, which needs approval, and `opencode run` rejects approvals. Wall times depend on the
+path the agent takes and vary run to run; the per-call speeds are the comparable numbers.
+
+Where the time goes: in the balanced run about 770 s were prompt processing and 703 s generation, so OpenCode on
+this laptop is limited by both. Generation is bound by memory bandwidth (about 120 GB/s for LPDDR5X-7467 on a
+128-bit bus vs 546 GB/s on the M4 Max), which no power profile changes. `throughput-performance` holds the GPU near
+its 2.5 GHz maximum at 77 °C with the fans at full speed: worth it for long agent runs, loud for everything else.
+The Arc setup is best for short, bounded tasks; long multi-step sessions work but are slow.
 
 Memory: with a 64k context the laptop dropped to 212 MB free RAM under load, so the context is 32k. At 32k with
 `--parallel 1`, about 10.8 GB stays free with the model loaded.
@@ -134,15 +150,14 @@ mkdir -p ~/.config/containers/systemd ~/.config/systemd/user
 cp quadlet/* ~/.config/containers/systemd/
 cp systemd/qwen-llama.service ~/.config/systemd/user/      # edit the two paths in ExecStart
 systemctl --user daemon-reload
-systemctl --user enable --now qwen-llama.service
-systemctl --user start opencode.service
+install -Dm755 scripts/opencode-ctl ~/.local/bin/opencode-ctl
+install -Dm644 desktop/opencode.desktop ~/.local/share/applications/opencode.desktop   # set YOU to your user
+opencode-ctl start      # waits for the model, then opens the web UI; --no-open to skip the browser
+opencode-ctl stop
 ```
 
-To start everything at boot without logging in:
-
-```bash
-sudo loginctl enable-linger "$USER"
-```
+The services have no `[Install]` section on purpose. If you want them at boot instead, add
+`[Install]` / `WantedBy=default.target` to the three units and run `sudo loginctl enable-linger "$USER"`.
 
 ### 5. Firewall (Fedora)
 
@@ -181,6 +196,20 @@ Add `~/opencode-stack/ssh/id_ed25519.pub` to `~/.ssh/authorized_keys` on each ma
 permissions so ssh, scp, rsync and sftp always ask for approval in the web UI (in non-interactive `opencode run`
 they are rejected).
 
+### 8. GitHub CLI and the coach agent (optional)
+
+The image includes `gh`. To keep a login, uncomment the `gh` `Volume=` line in `opencode.container`, restart
+`opencode.service`, then log in once:
+
+```bash
+mkdir -p ~/opencode-stack/gh
+podman exec -it opencode gh auth login
+```
+
+`opencode.json.example` lets read-only `gh` commands run and asks before any other `gh` command and every
+`git push`. For the coach agent, copy `config/agents/coach.md.example` to
+`~/opencode-stack/config/agents/coach.md`; it appears in the web UI's agent picker next to Build and Plan.
+
 ## Notes and gotchas
 
 - **`.local` names**: the Alpine-based OpenCode container cannot resolve mDNS (`*.local`) names; use IPs (and DHCP
@@ -199,9 +228,9 @@ they are rejected).
 ## Uninstall
 
 ```bash
-systemctl --user disable --now qwen-llama.service
+opencode-ctl stop
 systemctl --user stop opencode.service opencode-playwright.service
-rm ~/.config/containers/systemd/opencode* ~/.config/systemd/user/qwen-llama.service
+rm ~/.config/containers/systemd/opencode* ~/.config/systemd/user/qwen-llama.service ~/.local/bin/opencode-ctl ~/.local/share/applications/opencode.desktop
 systemctl --user daemon-reload
 podman volume rm opencode-data; podman network rm opencode
 ```

@@ -1,0 +1,15 @@
+#!/bin/bash
+# opencode-ctl start|stop|status - local OpenCode (llama.cpp model + Playwright + OpenCode web)
+export XDG_RUNTIME_DIR=/run/user/$(id -u)
+U="qwen-llama.service opencode-playwright.service opencode.service"
+case "$1" in
+  start)
+    systemctl --user start $U || exit 1
+    for i in $(seq 1 90); do curl -s -m 2 http://127.0.0.1:1234/health | grep -q ok && break; sleep 2; done
+    for i in $(seq 1 30); do curl -s -o /dev/null -m 2 http://127.0.0.1:4096/ && break; sleep 1; done
+    [ "$2" = "--no-open" ] || xdg-open http://localhost:4096 >/dev/null 2>&1 &
+    ;;
+  stop)   systemctl --user stop opencode.service opencode-playwright.service qwen-llama.service ;;
+  status) for u in $U; do printf "%-28s %s\n" "$u" "$(systemctl --user is-active $u)"; done ;;
+  *) echo "usage: opencode-ctl start [--no-open] | stop | status"; exit 2 ;;
+esac

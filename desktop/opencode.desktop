@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=OpenCode
+Comment=Start local OpenCode (model, browser, web UI) and open it
+Exec=/home/YOU/.local/bin/opencode-ctl start
+Icon=utilities-terminal
+Terminal=false
+Categories=Development;
+Actions=stop;
+
+[Desktop Action stop]
+Name=Stop OpenCode
+Exec=/home/YOU/.local/bin/opencode-ctl stop

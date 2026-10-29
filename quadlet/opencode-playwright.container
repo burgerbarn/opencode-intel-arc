@@ -11,6 +11,4 @@ PublishPort=127.0.0.1:8931:8931
 
 [Service]
 Restart=always
-
-[Install]
-WantedBy=default.target
+# No [Install]: started on demand with scripts/opencode-ctl

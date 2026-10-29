@@ -7,6 +7,7 @@ After=opencode-playwright.service
 ContainerName=opencode
 Image=localhost/opencode-dev:1.19.4
 Exec=web --hostname 0.0.0.0 --port 4096
+RunInit=true
 WorkingDir=/workspace
 EnvironmentFile=%h/opencode-stack/.env
 Volume=%h/opencode-stack/workspace:/workspace:Z
@@ -14,6 +15,8 @@ Volume=%h/opencode-stack/config:/root/.config/opencode:Z
 Volume=%h/opencode-stack/gitconfig:/root/.gitconfig:ro,Z
 # Optional (README step 7): uncomment to mount a dedicated ssh key/config
 #Volume=%h/opencode-stack/ssh:/root/.ssh:ro,Z
+# Optional (README step 8): uncomment to keep a GitHub CLI login
+#Volume=%h/opencode-stack/gh:/root/.config/gh:Z
 Volume=opencode-data.volume:/root/.local/share/opencode
 # Host network so the container reaches llama-server on the host's 127.0.0.1:1234.
 # host.containers.internal on a custom network points at the LAN address, not loopback.
@@ -21,6 +24,6 @@ Network=host
 
 [Service]
 Restart=always
-
-[Install]
-WantedBy=default.target
+# opencode-ctl stop sends SIGTERM/SIGKILL; don't report that as a failure
+SuccessExitStatus=0 137 143
+# No [Install]: started on demand with scripts/opencode-ctl, not at boot

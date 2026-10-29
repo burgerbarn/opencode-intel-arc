@@ -45,7 +45,22 @@
       "ssh *": "ask",
       "scp *": "ask",
       "rsync *": "ask",
-      "sftp *": "ask"
+      "sftp *": "ask",
+      "git push*": "ask",
+      "gh *": "ask",
+      "gh repo view*": "allow",
+      "gh repo list*": "allow",
+      "gh repo clone*": "allow",
+      "gh issue list*": "allow",
+      "gh issue view*": "allow",
+      "gh pr list*": "allow",
+      "gh pr view*": "allow",
+      "gh pr diff*": "allow",
+      "gh status*": "allow",
+      "gh auth status*": "allow",
+      "gh release list*": "allow",
+      "gh release view*": "allow",
+      "gh search *": "allow"
     }
   }
 }
