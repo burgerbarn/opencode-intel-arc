@@ -12,7 +12,7 @@
         "qwen/qwen3.8-27b": {
           "name": "Qwen 3.8 27B",
           "limit": {
-            "context": 32768,
+            "context": 49152,
             "output": 8192
           }
         }
@@ -61,6 +61,9 @@
       "gh release list*": "allow",
       "gh release view*": "allow",
       "gh search *": "allow"
+    },
+    "external_directory": {
+      "/tmp/.playwright-mcp/**": "allow"
     }
   }
 }

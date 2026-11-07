@@ -7,7 +7,8 @@ integrated GPU on Fedora 44.
 What runs on the laptop:
 
 - **Model**: Qwen 3.8 27B (Q4_K_M GGUF) served by `llama-server` from llama.cpp's Vulkan backend, on
-  `127.0.0.1:1234`. The Arc's matrix units are used (`matrix cores: KHR_coopmat`).
+  `127.0.0.1:1234`, with flash attention off and MTP speculative decoding on (about 2x faster in OpenCode than
+  the defaults, see below). The Arc's matrix units are used (`matrix cores: KHR_coopmat`).
 - **OpenCode** web UI in a rootless Podman container (Quadlet), on port 4096, behind a password.
 - **Browser control**: Microsoft's Playwright MCP container, headless Chromium, `127.0.0.1:8931` only.
 - **Web search**: `mcp-searxng`, pointed at a SearXNG instance you run (optional; the only part that needs the
@@ -27,8 +28,8 @@ is left alone.
 |---|---|
 | Laptop | Dell XPS 14 (2026), model DA14260 |
 | CPU / GPU | Intel Core Ultra X7 358H / Intel Arc B390 (Panther Lake, Xe3) |
-| Memory | 32 GB LPDDR5X-7467 (30 GiB usable); Vulkan reports a 23.18 GiB device-local heap |
-| OS | Fedora 44 KDE, kernel 7.2.12, Mesa 26.2.5 (ANV), Podman 5.8.9 |
+| Memory | 32 GB LPDDR5X-9600, 153.6 GB/s (`dmidecode`; 30 GiB usable); Vulkan reports a 23.18 GiB device-local heap |
+| OS | Fedora 44 KDE, kernel 7.2.12 (tuning: 7.2.15), Mesa 26.2.5 (tuning: 26.2.6) (ANV), Podman 5.8.9 |
 | llama.cpp | release b11969, Vulkan backend |
 | OpenCode | 1.19.4 (`ghcr.io/anomalyco/opencode`) |
 | Playwright MCP | v0.0.83 (`mcr.microsoft.com/playwright/mcp`) |
@@ -38,6 +39,65 @@ is left alone.
 The same CPU/GPU is in the Framework Laptop 13 Pro (Intel), so these numbers should carry over; not tested there.
 
 ## Measured performance
+
+### Tuned settings (the ones in this repo)
+
+Two `llama-server` flags roughly halve OpenCode's wall time on this GPU:
+
+1. **Flash attention off** (`-fa off`). On the Arc B390 with Mesa's Vulkan driver, flash attention is fine on an
+   empty context but collapses as the conversation grows, and OpenCode always works deep in a long conversation:
+
+   | `llama-bench`, b11969, ubatch 512 | flash attention on | flash attention off |
+   |---|---|---|
+   | prompt processing at 14.5k tokens depth (pp512 @ d14500) | 55 t/s | **192 t/s** |
+   | generation at 14.5k depth (tg32 @ d14500) | 5.14 t/s | 5.55 t/s |
+
+   GPU averaged 1765 MHz, max 70 °C during these runs, so this is not thermal.
+
+2. **MTP speculative decoding** (`--spec-type draft-mtp`). The Qwen 3.8 GGUF carries its own multi-token-prediction
+   layer (`blk.64.nextn.*`; without the flag llama.cpp logs it as an unused tensor). A 400-token code answer went
+   from 5.38 to **13.0 t/s** with 90% of drafted tokens accepted, and the output was byte-identical at
+   temperature 0. Inside OpenCode, where the text is less predictable than code, generation runs 8-9 t/s.
+
+Flash attention off needs a larger compute buffer: at 64k context, ubatch 512 and 256 fail to allocate on the
+23 GiB Vulkan heap. 48k context with `-ub 256 --spec-draft-n-ubatch 64` fits: 5.9 GB RAM available with the
+whole stack just started, 3.3 GB after the two test runs below. The first ~14.6k-token OpenCode prompt (system prompt + tool definitions) now takes 102 s
+at 143 t/s; later chats reuse it from the prompt cache.
+
+Generation without MTP is bound by memory bandwidth: 6.67 t/s x 16.8 GB of weights = ~112 GB/s, ~73% of the
+153.6 GB/s this LPDDR5X-9600 provides. MTP gets past that limit because each pass over the weights yields ~3.7
+tokens.
+
+OpenCode wall time, same two prompts via `opencode run` (fib: write and run a Python script; search + browser:
+SearXNG search plus Playwright on kernel.org), all answers correct:
+
+| Model and settings | fib | search + browser |
+|---|---|---|
+| Qwen 3.8 27B Q4_K_M, flash attention on (previous version of this repo) | 342 s | 215 s |
+| **Qwen 3.8 27B Q4_K_M, `-fa off`, MTP, 48k (this repo)** | **180 s** | **108 s** |
+| Qwen3.6-35B-A3B UD-IQ4_XS (MoE), `-fa off`, 64k | 103 s | 90 s |
+| gpt-oss-20b MXFP4 (MoE), `-fa off`, 64k | 78 s | 319 s\* |
+
+\* gpt-oss-20b never called the search tool; it read kernel.org ten times through `searxng_web_url_read`
+instead. Qwen3.6 counted the sequence from 1 (15th = 610), the others from 0 (377); the prompt allows both.
+
+Mixture-of-experts models on the same benchmark (`llama-bench` b11969, ubatch 512, 14.5k depth):
+
+| Model | size | prompt, FA off / on | generation, FA off / on |
+|---|---|---|---|
+| Qwen 3.8 27B Q4_K_M (dense) | 15.65 GiB | 192 / 55 t/s | 5.55 / 5.14 t/s (13 with MTP) |
+| [Qwen3.6-35B-A3B UD-IQ4_XS](https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF) | 16.50 GiB | 454 / 154 t/s | 25.6 / 26.0 t/s |
+| [gpt-oss-20b MXFP4](https://huggingface.co/lmstudio-community/gpt-oss-20b-GGUF) | 11.27 GiB | 281 / 184 t/s | 27.4 / 21.6 t/s |
+
+The MoE models are 3-5x faster per token; the dense 27B is kept as the default here. To run Qwen3.6-35B-A3B
+instead, the tested `ExecStart` arguments were
+`-m Qwen3.6-35B-A3B-UD-IQ4_XS.gguf --alias qwen/qwen3.8-27b -ngl 99 -c 65536 -ub 512 -fa off --parallel 1 --jinja`
+(7.2 GB RAM available right after loading, with the stack running).
+
+Not tested yet: newer llama.cpp releases, the SYCL and OpenVINO backends (both need Intel's compute runtime /
+oneAPI libraries), and MTP on the MoE models.
+
+### Original settings (flash attention on)
 
 All on the hardware above, Qwen 3.8 27B Q4_K_M, all 64 layers on the GPU, flash attention on.
 
@@ -52,7 +112,7 @@ All on the hardware above, Qwen 3.8 27B Q4_K_M, all 64 layers on the GPU, flash 
 | LM Studio headless (llmster), its default load settings, 5,133-token prompt | 34 t/s | 4.47 t/s |
 
 Generation is bound by memory bandwidth (16.5 GB of weights read per token), so ~5-7 t/s is close to what this
-memory allows for a dense 27B model.
+memory allows for a dense 27B model without speculative decoding (MTP, above, doubles it).
 
 Prompt processing slows down as the conversation gets longer, and that is what matters for OpenCode, which keeps
 adding tool output to a growing conversation:
@@ -89,7 +149,7 @@ snapshot outside the workspace, which needs approval, and `opencode run` rejects
 path the agent takes and vary run to run; the per-call speeds are the comparable numbers.
 
 Where the time goes: in the balanced run about 770 s were prompt processing and 703 s generation, so OpenCode on
-this laptop is limited by both. Generation is bound by memory bandwidth (about 120 GB/s for LPDDR5X-7467 on a
+this laptop is limited by both. Generation is bound by memory bandwidth (153.6 GB/s for LPDDR5X-9600 on a
 128-bit bus vs 546 GB/s on the M4 Max), which no power profile changes. `throughput-performance` holds the GPU near
 its 2.5 GHz maximum at 77 °C with the fans at full speed: worth it for long agent runs, loud for everything else.
 The Arc setup is best for short, bounded tasks; long multi-step sessions work but are slow.
@@ -100,7 +160,7 @@ Memory: with a 64k context the laptop dropped to 212 MB free RAM under load, so 
 A mixture-of-experts model would be much faster on this GPU: a community benchmark on the same chip measured
 Qwen3.6-35B-A3B at ~633 t/s prompt / ~33 t/s generation
 ([grigio.org](https://grigio.org/benchmarking-llama-cpp-backends-on-intel-panther-lake-vulkan-vs-sycl-vs-openvino-vs-cpu/)).
-Not tested here.
+Tested here since: see "Tuned settings" above.
 
 ## Setup
 
@@ -134,6 +194,7 @@ and compare its sha256 with the one above.
 
 ```bash
 mkdir -p ~/opencode-stack/workspace ~/opencode-stack/config
+mkdir -m 777 ~/opencode-stack/playwright-out   # Playwright snapshots, shared by both containers
 cp Containerfile ~/opencode-stack/
 cp env.example ~/opencode-stack/.env && chmod 600 ~/opencode-stack/.env    # set a real password
 cp gitconfig.example ~/opencode-stack/gitconfig                           # your git name/email
@@ -223,7 +284,16 @@ podman exec -it opencode gh auth login
   jobs do not count as activity). Services come back after resume; the interrupted task does not.
 - **Remote reboot / inhibit**: `systemctl reboot` and `systemd-inhibit` over ssh are refused by polkit; use sudo or
   `kde-inhibit` with the session bus.
-- **Context size**: 64k context left ~200 MB free RAM under load on 32 GB; 32k is the setting here.
+- **Context size**: 48k with flash attention off (above). With flash attention on, 64k context left ~200 MB free RAM
+  under load on 32 GB, so the old setting was 32k.
+- **Playwright snapshots**: Playwright MCP saves page snapshots to `/tmp/.playwright-mcp` inside its own container
+  and hands the model that path. Without the shared `playwright-out` mount the OpenCode container cannot read them
+  (this was the "failed" browser run above).
+- **KDE System Monitor shows 0% GPU** on the `xe` driver: Fedora ships `/usr/libexec/ksystemstats_xe_helper` without
+  the `cap_perfmon` capability its i915 helper gets, so it fails with "Failed opening any event". Fix:
+  `sudo setcap cap_perfmon=ep /usr/libexec/ksystemstats_xe_helper && systemctl --user restart plasma-ksystemstats`
+  (a ksystemstats update may reset it). llama.cpp's Vulkan backend runs on the compute engine, so tools that only
+  graph the render engine also show ~0%; `nvtop` shows it.
 
 ## Uninstall
 

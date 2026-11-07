@@ -4,7 +4,10 @@ After=network-online.target
 
 [Service]
 # Edit the two paths: your llama.cpp Vulkan build (tested: release b11969) and the GGUF file.
-ExecStart=%h/llama.cpp/build/bin/llama-server -m %h/models/Qwen3.8-27B-Q4_K_M.gguf --alias qwen/qwen3.8-27b -ngl 99 -c 32768 -fa on --parallel 1 --jinja --host 127.0.0.1 --port 1234
+# -fa off: flash attention on the Xe3 Vulkan path is 3.5x slower at 14.5k context depth (55 vs 192 t/s).
+# --spec-type draft-mtp: Qwen 3.8's built-in multi-token-prediction head, ~2x generation, identical output.
+# -c 49152 -ub 256 --spec-draft-n-ubatch 64: largest batch that fits next to a 48k context with flash attention off.
+ExecStart=%h/llama.cpp/build/bin/llama-server -m %h/models/Qwen3.8-27B-Q4_K_M.gguf --alias qwen/qwen3.8-27b -ngl 99 -c 49152 -ub 256 -fa off --spec-type draft-mtp --spec-draft-n-ubatch 64 --parallel 1 --jinja --host 127.0.0.1 --port 1234
 Restart=on-failure
 RestartSec=5
 

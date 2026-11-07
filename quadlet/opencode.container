@@ -18,6 +18,8 @@ Volume=%h/opencode-stack/gitconfig:/root/.gitconfig:ro,Z
 # Optional (README step 8): uncomment to keep a GitHub CLI login
 #Volume=%h/opencode-stack/gh:/root/.config/gh:Z
 Volume=opencode-data.volume:/root/.local/share/opencode
+# Shared with the Playwright container so page snapshots it saves are readable here at the same path
+Volume=%h/opencode-stack/playwright-out:/tmp/.playwright-mcp:z
 # Host network so the container reaches llama-server on the host's 127.0.0.1:1234.
 # host.containers.internal on a custom network points at the LAN address, not loopback.
 Network=host

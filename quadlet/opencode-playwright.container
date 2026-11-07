@@ -8,6 +8,8 @@ Entrypoint=node
 Exec=/app/cli.js --headless --browser chromium --no-sandbox --isolated --port 8931 --host 0.0.0.0 --allowed-hosts 127.0.0.1:8931
 Network=opencode.network
 PublishPort=127.0.0.1:8931:8931
+# Snapshots land here; the OpenCode container mounts the same folder (mkdir -m 777 ~/opencode-stack/playwright-out)
+Volume=%h/opencode-stack/playwright-out:/tmp/.playwright-mcp:z
 
 [Service]
 Restart=always
