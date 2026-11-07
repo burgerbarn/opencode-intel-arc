@@ -18,7 +18,9 @@ What runs on the laptop:
 - Optional GitHub CLI (`gh`): read commands run freely, anything that writes (and every `git push`) asks first.
 - Optional "coach" agent that explains each step before doing it; switch to it in the agent picker.
 
-Nothing starts at boot: `scripts/opencode-ctl start|stop|status` (or the desktop launcher) brings the model, the
+Two modes, one model loaded at a time: **smart** (Qwen 3.8 27B, default) and **fast** (Qwen 3.6 35B-A3B, about 2x
+faster, weaker on hard tasks; see "Choosing smart or fast" below). Nothing starts at boot: `scripts/opencode-ctl
+start [smart|fast]|stop|status` (or the desktop launchers "OpenCode (smart)" / "OpenCode (fast)") brings the model, the
 browser and the web UI up or down together, so the 17 GB model only uses memory while you use it. Normal suspend
 is left alone.
 
@@ -93,6 +95,22 @@ The MoE models are 3-5x faster per token; the dense 27B is kept as the default h
 instead, the tested `ExecStart` arguments were
 `-m Qwen3.6-35B-A3B-UD-IQ4_XS.gguf --alias qwen/qwen3.8-27b -ngl 99 -c 65536 -ub 512 -fa off --parallel 1 --jinja`
 (7.2 GB RAM available right after loading, with the stack running).
+
+### Choosing smart or fast
+
+Measured on the same laptop, 2026-11-07:
+
+| | smart: Qwen 3.8 27B | fast: Qwen 3.6 35B-A3B |
+|---|---|---|
+| fib / search + browser (`opencode run`) | 180 / 108 s | 103 / 90 s |
+| Bug-fix task: 6 planted bugs in 3 files, fix until `unittest` passes, tests untouched | all 6 fixed, 484 s | all 6 fixed, 274 s |
+| 10 organic-chemistry tutoring questions with an answer key | 10/10 | 10/10 |
+| Qwen's model cards: SWE-bench Pro / HLE / LiveCodeBench v6 | 61.7 / 30.8 / 90.3 | 49.5 / 21.4 / 80.4 |
+
+Both passed everything tested here; the fast model's end-of-task summary twice described changes it had not made.
+The model-card numbers come from different harnesses, so the gaps are indicative. Smart is the default because
+long multi-step work is where the stronger model matters and a weaker model's retries eat its speed advantage;
+fast is for quick, bounded tasks.
 
 Not tested yet: newer llama.cpp releases, the SYCL and OpenVINO backends (both need Intel's compute runtime /
 oneAPI libraries), and MTP on the MoE models.
@@ -209,11 +227,13 @@ podman pull mcr.microsoft.com/playwright/mcp:v0.0.83
 ```bash
 mkdir -p ~/.config/containers/systemd ~/.config/systemd/user
 cp quadlet/* ~/.config/containers/systemd/
-cp systemd/qwen-llama.service ~/.config/systemd/user/      # edit the two paths in ExecStart
+cp systemd/qwen-llama.service systemd/qwen-fast.service ~/.config/systemd/user/   # edit the paths in ExecStart
 systemctl --user daemon-reload
 install -Dm755 scripts/opencode-ctl ~/.local/bin/opencode-ctl
-install -Dm644 desktop/opencode.desktop ~/.local/share/applications/opencode.desktop   # set YOU to your user
-opencode-ctl start      # waits for the model, then opens the web UI; --no-open to skip the browser
+install -Dm644 -t ~/.local/share/applications desktop/opencode.desktop desktop/opencode-fast.desktop   # set YOU to your user
+opencode-ctl start      # last mode used (smart the first time); waits for the model, then opens the web UI
+opencode-ctl start fast # switch: stops the other model, points OpenCode's default (and only listed) model at it
+                        # --no-open skips the browser; reload an open web UI tab after switching
 opencode-ctl stop
 ```
 
@@ -300,7 +320,7 @@ podman exec -it opencode gh auth login
 ```bash
 opencode-ctl stop
 systemctl --user stop opencode.service opencode-playwright.service
-rm ~/.config/containers/systemd/opencode* ~/.config/systemd/user/qwen-llama.service ~/.local/bin/opencode-ctl ~/.local/share/applications/opencode.desktop
+rm ~/.config/containers/systemd/opencode* ~/.config/systemd/user/qwen-llama.service ~/.config/systemd/user/qwen-fast.service ~/.local/bin/opencode-ctl ~/.local/share/applications/opencode*.desktop
 systemctl --user daemon-reload
 podman volume rm opencode-data; podman network rm opencode
 ```

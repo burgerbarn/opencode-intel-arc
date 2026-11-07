@@ -1,0 +1,18 @@
+[Desktop Entry]
+Type=Application
+Name=OpenCode (fast)
+GenericName=Local AI coding agent
+Comment=Start OpenCode with Qwen 3.6 35B-A3B (about 2x faster; less capable on hard tasks) and open it
+Exec=/home/YOU/.local/bin/opencode-ctl start fast
+Icon=utilities-terminal
+Terminal=false
+Categories=Development;
+Actions=smart;stop;
+
+[Desktop Action smart]
+Name=Switch to smart (Qwen 3.8 27B)
+Exec=/home/YOU/.local/bin/opencode-ctl start smart
+
+[Desktop Action stop]
+Name=Stop OpenCode
+Exec=/home/YOU/.local/bin/opencode-ctl stop

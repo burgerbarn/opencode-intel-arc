@@ -10,9 +10,16 @@
       },
       "models": {
         "qwen/qwen3.8-27b": {
-          "name": "Qwen 3.8 27B",
+          "name": "Qwen 3.8 27B (smart)",
           "limit": {
             "context": 49152,
+            "output": 8192
+          }
+        },
+        "qwen/qwen3.6-35b-a3b": {
+          "name": "Qwen 3.6 35B-A3B (fast)",
+          "limit": {
+            "context": 65536,
             "output": 8192
           }
         }

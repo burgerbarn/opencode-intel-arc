@@ -1,39 +1,85 @@
 #!/bin/bash
-# opencode-ctl start|stop|status|logs - local OpenCode (llama.cpp model + Playwright + OpenCode web)
+# opencode-ctl start [smart|fast] [--no-open] | stop | status | logs [n]
+# Local OpenCode: llama.cpp model + Playwright + OpenCode web. One model at a time:
+#   smart = Qwen 3.8 27B (qwen-llama.service), fast = Qwen 3.6 35B-A3B MoE (qwen-fast.service)
 export XDG_RUNTIME_DIR=/run/user/$(id -u)
 export DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-unix:path=$XDG_RUNTIME_DIR/bus}
-U="qwen-llama.service opencode-playwright.service opencode.service"
+CONF=$HOME/opencode-stack/config/opencode.json
+STATE=$HOME/.config/opencode-ctl/mode
 URL=http://localhost:4096
+STACK="opencode-playwright.service opencode.service"
+
+unit_of()  { [ "$1" = fast ] && echo qwen-fast.service || echo qwen-llama.service; }
+model_of() { [ "$1" = fast ] && echo qwen/qwen3.6-35b-a3b || echo qwen/qwen3.8-27b; }
+label_of() { [ "$1" = fast ] && echo "fast: Qwen 3.6 35B-A3B" || echo "smart: Qwen 3.8 27B"; }
 note() { notify-send -a OpenCode -i "$1" "$2" "$3" 2>/dev/null || true; echo "$2: $3"; }
 model_ok() { curl -s -m 2 http://127.0.0.1:1234/health | grep -q ok; }
 web_ok()   { curl -s -o /dev/null -m 2 http://127.0.0.1:4096/; }
 fail() {
-  local u=$1; local why
+  local u=$1 why
   why=$(journalctl --user -u "$u" -n 3 --no-pager -o cat 2>/dev/null | tail -1 | cut -c1-200)
   note dialog-error "OpenCode failed to start" "$u: ${why:-no log}  (opencode-ctl logs)"
   exit 1
 }
+# Point opencode's default model (and the only model listed in the web UI) at the loaded one.
+# Prints "changed" if the config was edited.
+set_model() {
+  python3 - "$CONF" "$1" <<'PY'
+import json, sys
+p, m = sys.argv[1], sys.argv[2]
+d = json.load(open(p))
+want = "lmstudio/" + m
+if d.get("model") != want or d["provider"]["lmstudio"].get("whitelist") != [m]:
+    d["model"] = want
+    d["provider"]["lmstudio"]["whitelist"] = [m]
+    with open(p, "w") as f:
+        json.dump(d, f, indent=2); f.write("\n")
+    print("changed")
+PY
+}
+
 case "$1" in
   start)
-    if systemctl --user is-active -q $U && model_ok && web_ok; then
-      [ "$2" = "--no-open" ] || xdg-open $URL >/dev/null 2>&1
-      note utilities-terminal "OpenCode is already running" "$URL"; exit 0
+    MODE=""; OPEN=1
+    for a in "${@:2}"; do
+      case "$a" in smart|fast) MODE=$a ;; --no-open) OPEN=0 ;; esac
+    done
+    [ -z "$MODE" ] && MODE=$(cat "$STATE" 2>/dev/null)
+    [ "$MODE" = fast ] || MODE=smart
+    mkdir -p "$(dirname "$STATE")"; echo "$MODE" > "$STATE"
+    MU=$(unit_of $MODE)
+    CHANGED=$(set_model "$(model_of $MODE)")
+    if [ -z "$CHANGED" ] && systemctl --user is-active -q $MU $STACK && model_ok && web_ok; then
+      [ $OPEN = 1 ] && xdg-open $URL >/dev/null 2>&1
+      note utilities-terminal "OpenCode is already running ($(label_of $MODE))" "$URL"; exit 0
     fi
-    note utilities-terminal "Starting OpenCode" "Loading Qwen 3.8 27B on the GPU..."
-    systemctl --user start $U || fail opencode.service
-    for i in $(seq 1 90); do model_ok && break; systemctl --user is-failed -q qwen-llama.service && fail qwen-llama.service; sleep 2; done
-    model_ok || fail qwen-llama.service
+    note utilities-terminal "Starting OpenCode ($(label_of $MODE))" "Loading the model on the GPU..."
+    # Conflicts= in the units stops the other model first, so only one is ever loaded
+    systemctl --user start $MU || fail $MU
+    for i in $(seq 1 90); do
+      model_ok && curl -s -m 2 http://127.0.0.1:1234/v1/models | grep -q "$(model_of $MODE)" && break
+      systemctl --user is-failed -q $MU && fail $MU; sleep 2
+    done
+    model_ok || fail $MU
+    if [ -n "$CHANGED" ] && systemctl --user is-active -q opencode.service; then
+      systemctl --user restart opencode.service || fail opencode.service
+    else
+      systemctl --user start $STACK || fail opencode.service
+    fi
     for i in $(seq 1 30); do web_ok && break; sleep 1; done
     web_ok || fail opencode.service
-    [ "$2" = "--no-open" ] || xdg-open $URL >/dev/null 2>&1
-    note utilities-terminal "OpenCode is ready" "$URL  (also http://$(hostname -I | awk '{print $1}'):4096 on the LAN)"
+    [ $OPEN = 1 ] && xdg-open $URL >/dev/null 2>&1
+    note utilities-terminal "OpenCode is ready ($(label_of $MODE))" "$URL  (also http://$(hostname -I | awk '{print $1}'):4096 on the LAN)"
     ;;
   stop)
-    systemctl --user stop opencode.service opencode-playwright.service qwen-llama.service
+    systemctl --user stop opencode.service opencode-playwright.service qwen-llama.service qwen-fast.service
     note process-stop "OpenCode stopped" "Model unloaded, GPU memory freed"
     ;;
-  status) for u in $U; do printf "%-28s %s\n" "$u" "$(systemctl --user is-active $u)"; done
-          model_ok && echo "model: ready" || echo "model: not ready"; web_ok && echo "web: $URL" || echo "web: down" ;;
-  logs)   journalctl --user -u qwen-llama.service -u opencode.service -u opencode-playwright.service -n ${2:-40} --no-pager -o short ;;
-  *) echo "usage: opencode-ctl start [--no-open] | stop | status | logs [n]"; exit 2 ;;
+  status)
+    echo "mode: $(cat "$STATE" 2>/dev/null || echo smart)"
+    for u in qwen-llama.service qwen-fast.service $STACK; do printf "%-28s %s\n" "$u" "$(systemctl --user is-active $u)"; done
+    model_ok && echo "model: ready ($(curl -s -m 2 http://127.0.0.1:1234/v1/models | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"][0]["id"])' 2>/dev/null))" || echo "model: not ready"
+    web_ok && echo "web: $URL" || echo "web: down" ;;
+  logs)   journalctl --user -u qwen-llama.service -u qwen-fast.service -u opencode.service -u opencode-playwright.service -n ${2:-40} --no-pager -o short ;;
+  *) echo "usage: opencode-ctl start [smart|fast] [--no-open] | stop | status | logs [n]"; exit 2 ;;
 esac
