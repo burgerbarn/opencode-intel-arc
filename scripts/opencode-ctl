@@ -48,7 +48,7 @@ case "$1" in
       case "$a" in smart|fast) MODE=$a ;; --no-open) OPEN=0 ;; esac
     done
     [ -z "$MODE" ] && MODE=$(cat "$STATE" 2>/dev/null)
-    [ "$MODE" = fast ] || MODE=smart
+    [ "$MODE" = smart ] || MODE=fast
     mkdir -p "$(dirname "$STATE")"; echo "$MODE" > "$STATE"
     MU=$(unit_of $MODE)
     CHANGED=$(set_model "$(model_of $MODE)")
@@ -79,7 +79,7 @@ case "$1" in
     note process-stop "OpenCode stopped" "Model unloaded, GPU memory freed"
     ;;
   status)
-    echo "mode: $(cat "$STATE" 2>/dev/null || echo smart)"
+    echo "mode: $(cat "$STATE" 2>/dev/null || echo fast)"
     for u in qwen-llama.service qwen-fast.service $STACK; do printf "%-28s %s\n" "$u" "$(systemctl --user is-active $u)"; done
     model_ok && echo "model: ready ($(curl -s -m 2 http://127.0.0.1:1234/v1/models | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"][0]["id"])' 2>/dev/null))" || echo "model: not ready"
     web_ok && echo "web: $URL" || echo "web: down" ;;

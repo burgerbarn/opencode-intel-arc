@@ -107,10 +107,27 @@ Measured on the same laptop, 2026-11-07:
 | 10 organic-chemistry tutoring questions with an answer key | 10/10 | 10/10 |
 | Qwen's model cards: SWE-bench Pro / HLE / LiveCodeBench v6 | 61.7 / 30.8 / 90.3 | 49.5 / 21.4 / 80.4 |
 
-Both passed everything tested here; the fast model's end-of-task summary twice described changes it had not made.
-The model-card numbers come from different harnesses, so the gaps are indicative. Smart is the default because
-long multi-step work is where the stronger model matters and a weaker model's retries eat its speed advantage;
-fast is for quick, bounded tasks.
+A 27-task eval with `opencode run`, graded by script, one run per configuration (20 general tasks: Python, shell,
+diagnosis, web lookup, chemistry, GitHub; 7 past robotics bugs):
+
+| Round (settings) | Set | smart | fast |
+|---|---|---|---|
+| 1: xhigh reasoning on smart | 20 general | 17.57 in 209 min | 17.00 in 47 min |
+| | 7 robot bugs | 0.00 in 140 min | 5.67 in 26 min |
+| 2: medium reasoning, page-read cap, AGENTS.md rules | 20 general | 15.00 in 205 min | 17.23 in 54 min |
+| | 7 robot bugs | 5.60 in 79 min | 6.20 in 30 min |
+| 3: + thinking cap, continue after denied calls | 20 general | 19.40 in 140 min | 19.56 in 80 min |
+| | 7 robot bugs | 5.93 in 67 min | 6.13 in 28 min |
+
+Fast is the default: at round 3 settings it matched or beat smart on both sets in about half the time. The 0.16 and
+0.20 gaps are within what one run can show, so this says "no measurable accuracy loss", not "fast is better".
+Qwen's model cards still rate smart higher, so use it when fast gets stuck on something hard.
+
+Limits of these numbers: smart's timeouts in rounds 1 and 2 are inflated by an eval bug (leftover runs, see gotchas),
+so xhigh and medium were never compared cleanly. The robotics tasks hand the model the evidence up front; collecting
+it from a live system is untested. Both models missed the same root cause that Claude Fable and Opus found on one
+of those tasks (Fable 6.8/7, Opus 7/7 on the same set). In an earlier bug-fix test, fast's end-of-task summary twice
+described changes it had not made, so read the diff.
 
 Not tested yet: newer llama.cpp releases, the SYCL and OpenVINO backends (both need Intel's compute runtime /
 oneAPI libraries), and MTP on the MoE models.
