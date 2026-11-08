@@ -4,11 +4,15 @@ After=network-online.target
 Conflicts=qwen-fast.service
 
 [Service]
+TimeoutStopSec=20
 # Edit the two paths: your llama.cpp Vulkan build (tested: release b11969) and the GGUF file.
 # -fa off: flash attention on the Xe3 Vulkan path is 3.5x slower at 14.5k context depth (55 vs 192 t/s).
 # --spec-type draft-mtp: Qwen 3.8's built-in multi-token-prediction head, ~2x generation, identical output.
 # -c 49152 -ub 256 --spec-draft-n-ubatch 64: largest batch that fits next to a 48k context with flash attention off.
-ExecStart=%h/llama.cpp/build/bin/llama-server -m %h/models/Qwen3.8-27B-Q4_K_M.gguf --alias qwen/qwen3.8-27b -ngl 99 -c 49152 -ub 256 -fa off --spec-type draft-mtp --spec-draft-n-ubatch 64 --parallel 1 --jinja --host 127.0.0.1 --port 1234
+# --cache-ram 1024 --ctx-checkpoints 4: the defaults (8 GB, 32) grew host RAM until the OOM killer took the server.
+# --reasoning-effort medium: the template default xhigh thinks about twice as long.
+# --reasoning-budget 4096: without a cap one turn spent its whole 8192 output tokens thinking (19 min) and never answered.
+ExecStart=%h/llama.cpp/build/bin/llama-server -m %h/models/Qwen3.8-27B-Q4_K_M.gguf --alias qwen/qwen3.8-27b -ngl 99 -c 49152 -ub 256 -fa off --spec-type draft-mtp --spec-draft-n-ubatch 64 --cache-ram 1024 --ctx-checkpoints 4 --reasoning-effort medium --reasoning-budget 4096 --reasoning-budget-message "Thinking limit reached. Stop reasoning now and act: call the next tool or give the answer." --parallel 1 --jinja --host 127.0.0.1 --port 1234
 Restart=on-failure
 RestartSec=5
 

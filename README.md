@@ -309,6 +309,19 @@ podman exec -it opencode gh auth login
 - **Playwright snapshots**: Playwright MCP saves page snapshots to `/tmp/.playwright-mcp` inside its own container
   and hands the model that path. Without the shared `playwright-out` mount the OpenCode container cannot read them
   (this was the "failed" browser run above).
+- **Out-of-memory kills, two separate causes**: llama-server's `--cache-ram` (8 GB) and `--ctx-checkpoints` (32)
+  defaults grew host RAM until the kernel killed it; capped to 1024 and 4. Second, `Conflicts=` between the two model
+  units does not order them, so a smart/fast switch loaded the new model while the old one was still in memory. One
+  `After=` line makes the stop finish first in both directions (lowest free memory during a switch: 4.75 GB).
+- **A model loaded under memory pressure stays slow**: one smart instance loaded with RAM tight and 1.5 GB swapped ran
+  prompts at 78 t/s until restarted; a clean load does 146 t/s at 14.6k tokens.
+- **Rejected tool calls end the run**: OpenCode 1.19.4 stops the agent loop on a denied call unless
+  `experimental.continue_loop_on_deny` is true, so an AGENTS.md rule about rejections has no effect without it.
+  With it set, the agent tries another approach after a reject in the web UI; the rejected action stays blocked.
+- **`systemctl is-active -q a b c` succeeds if any unit is active**: check units one at a time in scripts.
+- **`timeout` around `podman exec` kills only the client**: the process inside the container keeps running. In an
+  eval with `--parallel 1` that leftover run steals the slot from the next task and timeouts cascade. Kill it inside
+  the container as well.
 - **KDE System Monitor shows 0% GPU** on the `xe` driver: Fedora ships `/usr/libexec/ksystemstats_xe_helper` without
   the `cap_perfmon` capability its i915 helper gets, so it fails with "Failed opening any event". Fix:
   `sudo setcap cap_perfmon=ep /usr/libexec/ksystemstats_xe_helper && systemctl --user restart plasma-ksystemstats`

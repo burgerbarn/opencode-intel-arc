@@ -37,7 +37,9 @@
       ],
       "enabled": true,
       "environment": {
-        "SEARXNG_URL": "https://searx.example.com"
+        "SEARXNG_URL": "https://searx.example.com",
+        "URL_READ_MAX_CHARS": "20000",
+        "SEARXNG_LITE_TOOLS": "true"
       }
     },
     "playwright": {
@@ -72,5 +74,8 @@
     "external_directory": {
       "/tmp/.playwright-mcp/**": "allow"
     }
+  },
+  "experimental": {
+    "continue_loop_on_deny": true
   }
 }

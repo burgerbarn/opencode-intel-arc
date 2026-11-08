@@ -14,6 +14,9 @@ model_of() { [ "$1" = fast ] && echo qwen/qwen3.6-35b-a3b || echo qwen/qwen3.8-2
 label_of() { [ "$1" = fast ] && echo "fast: Qwen 3.6 35B-A3B" || echo "smart: Qwen 3.8 27B"; }
 note() { notify-send -a OpenCode -i "$1" "$2" "$3" 2>/dev/null || true; echo "$2: $3"; }
 model_ok() { curl -s -m 2 http://127.0.0.1:1234/health | grep -q ok; }
+model_is() { curl -s -m 2 http://127.0.0.1:1234/v1/models | grep -q "\"$1\""; }
+# systemctl is-active -q with several units succeeds if ANY is active; check each one
+all_active() { local u; for u in "$@"; do systemctl --user is-active -q "$u" || return 1; done; }
 web_ok()   { curl -s -o /dev/null -m 2 http://127.0.0.1:4096/; }
 fail() {
   local u=$1 why
@@ -49,7 +52,7 @@ case "$1" in
     mkdir -p "$(dirname "$STATE")"; echo "$MODE" > "$STATE"
     MU=$(unit_of $MODE)
     CHANGED=$(set_model "$(model_of $MODE)")
-    if [ -z "$CHANGED" ] && systemctl --user is-active -q $MU $STACK && model_ok && web_ok; then
+    if [ -z "$CHANGED" ] && all_active $MU $STACK && model_is "$(model_of $MODE)" && web_ok; then
       [ $OPEN = 1 ] && xdg-open $URL >/dev/null 2>&1
       note utilities-terminal "OpenCode is already running ($(label_of $MODE))" "$URL"; exit 0
     fi
@@ -57,10 +60,10 @@ case "$1" in
     # Conflicts= in the units stops the other model first, so only one is ever loaded
     systemctl --user start $MU || fail $MU
     for i in $(seq 1 90); do
-      model_ok && curl -s -m 2 http://127.0.0.1:1234/v1/models | grep -q "$(model_of $MODE)" && break
+      model_is "$(model_of $MODE)" && break
       systemctl --user is-failed -q $MU && fail $MU; sleep 2
     done
-    model_ok || fail $MU
+    model_is "$(model_of $MODE)" || fail $MU
     if [ -n "$CHANGED" ] && systemctl --user is-active -q opencode.service; then
       systemctl --user restart opencode.service || fail opencode.service
     else

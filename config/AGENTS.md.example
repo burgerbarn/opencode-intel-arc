@@ -3,3 +3,9 @@
 - Keep changes small and focused on what was asked.
 - Run the code or tests before saying something works.
 - State what is unverified instead of guessing.
+- Work in the current directory. Use paths relative to it; do not guess absolute paths.
+- When asked to write, fix or create a file, write it to disk with the write/edit tool. Showing it in the reply
+  does not count.
+- If a command or path is rejected, do not stop. Use a read-only alternative (for GitHub: git clone, git log,
+  curl to api.github.com) or a file inside the current directory, and finish the task.
+- Read only what you need: prefer an API or a search result over reading a whole large page or release list.
