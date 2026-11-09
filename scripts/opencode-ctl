@@ -77,6 +77,16 @@ good_load() {
   note dialog-warning "Smart is running slow ($sp t/s)" "4 loads tried. Fast mode is not affected."
 }
 
+# Send OpenCode's startup prompt once while launching, so later sessions reuse the cache instead of re-reading it.
+warm() {
+  local sid
+  timeout 300 podman exec -w /workspace opencode opencode run --title cache-warmup "Reply with the single word ok." >/dev/null 2>&1 \
+    || { podman exec opencode pkill -f "opencode run" 2>/dev/null; return 0; }
+  sid=$(podman exec opencode opencode session list 2>/dev/null | grep cache-warmup | grep -oE 'ses_[A-Za-z0-9]+' | head -1)
+  [ -n "$sid" ] && podman exec opencode opencode session delete "$sid" >/dev/null 2>&1
+  return 0
+}
+
 case "$1" in
   start)
     MODE=""; OPEN=1
@@ -104,6 +114,8 @@ case "$1" in
     fi
     for i in $(seq 1 30); do web_ok && break; sleep 1; done
     web_ok || fail opencode.service
+    note utilities-terminal "Warming up ($(label_of $MODE))" "Reading the startup prompt once..."
+    warm
     [ $OPEN = 1 ] && xdg-open $URL >/dev/null 2>&1
     note utilities-terminal "OpenCode is ready ($(label_of $MODE))" "$URL  (also http://$(hostname -I | awk '{print $1}'):4096 on the LAN)"
     ;;

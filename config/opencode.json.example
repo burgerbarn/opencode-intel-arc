@@ -80,5 +80,19 @@
   },
   "experimental": {
     "continue_loop_on_deny": true
+  },
+  "tools": {
+    "playwright_*": false,
+    "searxng_searxng_instance_info": false,
+    "searxng_searxng_search_suggestions": false
+  },
+  "agent": {
+    "title": {
+      "options": {
+        "chat_template_kwargs": {
+          "enable_thinking": false
+        }
+      }
+    }
   }
 }

@@ -203,6 +203,32 @@ Qwen3.6-35B-A3B at ~633 t/s prompt / ~33 t/s generation
 ([grigio.org](https://grigio.org/benchmarking-llama-cpp-backends-on-intel-panther-lake-vulkan-vs-sycl-vs-openvino-vs-cpu/)).
 Tested here since: see "Tuned settings" above.
 
+### New-session startup
+
+Measured with a new session in a new folder replying "ok", on fast. One run each, so expect about 10 s of variation.
+
+| Setup | Time |
+|---|---|
+| Original (13.2k-token prompt, 42 tools) | 58 s, 63 s |
+| Playwright moved to a subagent, title without thinking (8.4k tokens) | 21 s, 32 s |
+| Two llama-server slots (rejected: slower, less free memory) | 41 s, 42 s |
+| One slot, prompt-stabilizing plugin, warm-up at launch (28 s launch) | 7 s, 7 s, 7 s, 6 s |
+
+`py-async`, a full task, took 62 s before the warm-up and 45 s after, with a full score. Earlier in the eval it took 165 s.
+
+- `config/plugins/stable-prefix.ts` moves OpenCode's `<env>` block (folder and date) from the system prompt into the
+  first user message, so prompts from different folders differ only in the last few tokens. Plugins go in the OpenCode
+  config folder.
+- `opencode-ctl` sends the startup prompt once during launch and deletes that session.
+- Playwright tools load only in the `browser` subagent (`config/agents/browser.md.example`); a browser test through
+  it read a real page title in 69 s.
+- On this llama.cpp build, a prompt identical to the cached one re-read 4 tokens, while one differing about 600 tokens
+  before the end re-read all 8,394. Why is not known.
+
+**Not fixed: smart.** The same test takes 62-74 s per new session on Qwen3.8-27B, because its cache is not reused across
+sessions even with the warm-up. A direct identical request to the server did reuse it (4 tokens), so the difference is
+in how OpenCode's requests reach it; that is not explained yet.
+
 ## Setup
 
 These steps match what runs on the test laptop; adjust paths if yours differ.
