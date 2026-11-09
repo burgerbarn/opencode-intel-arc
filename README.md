@@ -334,6 +334,8 @@ podman exec -it opencode gh auth login
   147 at 14.6k tokens, and stay that way until restarted (generation speed is unaffected). Slow loads show a higher GPU
   clock (about 2050 vs 1490 MHz) with less throughput. Cause unknown. Ruled out by measurement: free memory and
   fragmentation at load, PL1 and thermals, CPU thread placement, and a 20 s pause before loading (2 of 5 still slow).
+  `opencode-ctl` works around it: after loading smart it times a ~4k-token prompt and reloads if under 135 t/s, up to
+  4 loads (adds about 27 s per start; set `PROBE_MIN` for other hardware). 8 of 8 real switches ended on a good load.
 - **Rejected tool calls end the run**: OpenCode 1.19.4 stops the agent loop on a denied call unless
   `experimental.continue_loop_on_deny` is true, so an AGENTS.md rule about rejections has no effect without it.
   With it set, the agent tries another approach after a reject in the web UI; the rejected action stays blocked.

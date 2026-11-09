@@ -41,6 +41,42 @@ if d.get("model") != want or d["provider"]["lmstudio"].get("whitelist") != [m]:
 PY
 }
 
+# Some smart loads process prompts at half speed until restarted (cause unknown). Measure a short fixed prompt.
+PROBE_MIN=135   # t/s at ~4k tokens; good loads measure 146-154 on Arc B390, slow ones 57-122
+LOADLOG=$HOME/.config/opencode-ctl/smart-load.log
+probe() {
+  python3 - <<'PY'
+import json, random, string, urllib.request
+random.seed(7)
+txt = " ".join("".join(random.choices(string.ascii_lowercase, k=random.randint(3, 10))) for _ in range(1200))
+body = {"prompt": txt, "n_predict": 1, "cache_prompt": False, "temperature": 0}
+req = urllib.request.Request("http://127.0.0.1:1234/completion", json.dumps(body).encode(), {"Content-Type": "application/json"})
+print(int(json.load(urllib.request.urlopen(req, timeout=300))["timings"]["prompt_per_second"]))
+PY
+}
+wait_model() {
+  local i
+  for i in $(seq 1 90); do
+    model_is "$(model_of $1)" && return 0
+    systemctl --user is-failed -q "$(unit_of $1)" && fail "$(unit_of $1)"; sleep 2
+  done
+  fail "$(unit_of $1)"
+}
+# Reload smart until a load measures good; after 4 loads keep the last one and say so.
+good_load() {
+  local n sp
+  for n in 1 2 3 4; do
+    sp=$(probe 2>/dev/null); sp=${sp:-0}
+    echo "$(date -Is) load $n: $sp t/s" >> "$LOADLOG"
+    [ "$sp" -ge $PROBE_MIN ] && return 0
+    [ $n = 4 ] && break
+    note utilities-terminal "Smart loaded slow ($sp t/s)" "Reloading ($n of 3)..."
+    systemctl --user restart qwen-llama.service || fail qwen-llama.service
+    sleep 1; wait_model smart
+  done
+  note dialog-warning "Smart is running slow ($sp t/s)" "4 loads tried. Fast mode is not affected."
+}
+
 case "$1" in
   start)
     MODE=""; OPEN=1
@@ -59,11 +95,8 @@ case "$1" in
     note utilities-terminal "Starting OpenCode ($(label_of $MODE))" "Loading the model on the GPU..."
     # Conflicts= in the units stops the other model first, so only one is ever loaded
     systemctl --user start $MU || fail $MU
-    for i in $(seq 1 90); do
-      model_is "$(model_of $MODE)" && break
-      systemctl --user is-failed -q $MU && fail $MU; sleep 2
-    done
-    model_is "$(model_of $MODE)" || fail $MU
+    wait_model $MODE
+    [ "$MODE" = smart ] && good_load
     if [ -n "$CHANGED" ] && systemctl --user is-active -q opencode.service; then
       systemctl --user restart opencode.service || fail opencode.service
     else
