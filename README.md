@@ -118,10 +118,16 @@ diagnosis, web lookup, chemistry, GitHub; 7 past robotics bugs):
 | | 7 robot bugs | 5.60 in 79 min | 6.20 in 30 min |
 | 3: + thinking cap, continue after denied calls | 20 general | 19.40 in 140 min | 19.56 in 80 min |
 | | 7 robot bugs | 5.93 in 67 min | 6.13 in 28 min |
+| 5: round 3 with low reasoning, smart only | 20 general | 18.26 in 169 min | n/a |
+| | 7 robot bugs | 5.60 in 111 min | n/a |
 
 Fast is the default: at round 3 settings it matched or beat smart on both sets in about half the time. The 0.16 and
 0.20 gaps are within what one run can show, so this says "no measurable accuracy loss", not "fast is better".
 Qwen's model cards still rate smart higher, so use it when fast gets stuck on something hard.
+
+Low reasoning on smart (round 5, median prompt speed 145 t/s, so not a slow load) scored lower and took longer than
+medium on both sets, with 5 timeouts against 2, so smart stays at medium. It is one run per setting. Round 4 was
+thrown out because it ran on a slow load.
 
 Limits of these numbers: smart's timeouts in rounds 1 and 2 are inflated by an eval bug (leftover runs, see gotchas),
 so xhigh and medium were never compared cleanly. The robotics tasks hand the model the evidence up front; collecting
