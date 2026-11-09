@@ -330,8 +330,10 @@ podman exec -it opencode gh auth login
   defaults grew host RAM until the kernel killed it; capped to 1024 and 4. Second, `Conflicts=` between the two model
   units does not order them, so a smart/fast switch loaded the new model while the old one was still in memory. One
   `After=` line makes the stop finish first in both directions (lowest free memory during a switch: 4.75 GB).
-- **A model loaded under memory pressure stays slow**: one smart instance loaded with RAM tight and 1.5 GB swapped ran
-  prompts at 78 t/s until restarted; a clean load does 146 t/s at 14.6k tokens.
+- **Smart can load in a slow state**: with identical flags, some loads process prompts at 48-105 t/s instead of about
+  147 at 14.6k tokens, and stay that way until restarted (generation speed is unaffected). Slow loads show a higher GPU
+  clock (about 2050 vs 1490 MHz) with less throughput. Cause unknown. Ruled out by measurement: free memory and
+  fragmentation at load, PL1 and thermals, CPU thread placement, and a 20 s pause before loading (2 of 5 still slow).
 - **Rejected tool calls end the run**: OpenCode 1.19.4 stops the agent loop on a denied call unless
   `experimental.continue_loop_on_deny` is true, so an AGENTS.md rule about rejections has no effect without it.
   With it set, the agent tries another approach after a reject in the web UI; the rejected action stays blocked.
